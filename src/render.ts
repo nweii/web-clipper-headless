@@ -6,7 +6,7 @@
 import { parseHTML } from "linkedom";
 import { installPolyfills } from "./polyfills.ts";
 import { findInterpreterSlots, substituteSlots } from "./tokens.ts";
-import { interpretSlot } from "./interpreter.ts";
+import { interpretSlots } from "./interpreter.ts";
 import { scanForInjection } from "./scan.ts";
 import type {
   ClipperTemplate,
@@ -97,21 +97,16 @@ async function dispatchInterpreter(args: {
     }
   }
 
-  const resolved: Record<string, string> = { ...args.overrides };
-  for (const slot of args.slots) {
-    const propertyType =
-      slot.location.kind === "property" ? propertyTypes.get(slot.location.propertyName) : undefined;
-    const value = await interpretSlot({
-      slot,
-      pageContext,
-      providerConfig: args.providerConfig,
-      applyFilters,
-      currentUrl: args.url,
-      propertyType,
-    });
-    resolved[slot.key] = value;
-  }
-  return resolved;
+  const interpreted = await interpretSlots({
+    slots: args.slots,
+    pageContext,
+    providerConfig: args.providerConfig,
+    applyFilters,
+    currentUrl: args.url,
+    propertyTypes,
+  });
+
+  return { ...args.overrides, ...interpreted };
 }
 
 async function defaultFetch(url: string): Promise<string> {

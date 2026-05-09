@@ -107,13 +107,28 @@ describe("render — server-side LLM dispatch", () => {
     globalThis.fetch = originalFetch;
   });
 
-  test("dispatches interpreter for unresolved slots", async () => {
+  test("dispatches interpreter once for all unresolved slots (batched)", async () => {
     const html = await articleHtml();
     const calls: Array<{ url: string; body: unknown }> = [];
+
+    const peek = await render({
+      url: "https://example.com/article",
+      template: interpreterTemplate,
+      fetchHtml: async () => html,
+    });
+    expect(peek.status).toBe("needs_interpretation");
+    if (peek.status !== "needs_interpretation") return;
+    const responseObj: Record<string, string> = {};
+    for (const slot of peek.unresolvedSlots) responseObj[slot.key] = "MOCK_VALUE";
+
     globalThis.fetch = (async (url: string, init?: { body?: string }) => {
       calls.push({ url, body: JSON.parse(init?.body ?? "{}") });
       return new Response(
-        JSON.stringify({ content: [{ type: "text", text: "MOCK_VALUE" }] }),
+        JSON.stringify({
+          content: [
+            { type: "text", text: JSON.stringify({ prompts_responses: responseObj }) },
+          ],
+        }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }) as unknown as typeof fetch;
@@ -135,7 +150,7 @@ describe("render — server-side LLM dispatch", () => {
     expect(result.status).toBe("rendered");
     if (result.status !== "rendered") return;
     expect(result.content).toContain("Summary: MOCK_VALUE");
-    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(calls.length).toBe(1);
     expect(calls[0]?.url).toBe("https://api.anthropic.com/v1/messages");
   });
 });

@@ -95,7 +95,7 @@ Conventions follow each provider's official SDK so existing keys work without re
 | `anthropic`, `claude` | `ANTHROPIC_API_KEY` | anthropic native |
 | `openai` (without "azure") | `OPENAI_API_KEY` | openai-compatible |
 | `azure` | `AZURE_OPENAI_API_KEY` | openai-compatible |
-| `google`, `gemini` | `GOOGLE_GENERATIVE_AI_API_KEY` | openai-compatible |
+| `google`, `gemini` | `GEMINI_API_KEY` | openai-compatible |
 | `openrouter` | `OPENROUTER_API_KEY` | openai-compatible |
 | `deepseek` | `DEEPSEEK_API_KEY` | openai-compatible |
 | `groq` | `GROQ_API_KEY` | openai-compatible |

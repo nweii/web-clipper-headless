@@ -15,7 +15,7 @@ const MAPPINGS: Mapping[] = [
   { match: /azure/i, envVar: "AZURE_OPENAI_API_KEY", adapter: "openai-compatible" },
   { match: /anthropic|claude/i, envVar: "ANTHROPIC_API_KEY", adapter: "anthropic" },
   { match: /openrouter/i, envVar: "OPENROUTER_API_KEY", adapter: "openai-compatible" },
-  { match: /google|gemini/i, envVar: "GOOGLE_GENERATIVE_AI_API_KEY", adapter: "openai-compatible" },
+  { match: /google|gemini/i, envVar: "GEMINI_API_KEY", adapter: "openai-compatible" },
   { match: /openai/i, envVar: "OPENAI_API_KEY", adapter: "openai-compatible" },
   { match: /deepseek/i, envVar: "DEEPSEEK_API_KEY", adapter: "openai-compatible" },
   { match: /groq/i, envVar: "GROQ_API_KEY", adapter: "openai-compatible" },

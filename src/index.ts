@@ -5,7 +5,7 @@ export { renderFromSettings } from "./render-from-settings.ts";
 export { installPolyfills } from "./polyfills.ts";
 export { loadSettings, parseClipperSettings, findTemplate } from "./settings.ts";
 export { findInterpreterSlots, substituteSlots } from "./tokens.ts";
-export { interpretSlot } from "./interpreter.ts";
+export { interpretSlots, parseInterpreterJson } from "./interpreter.ts";
 export {
   resolveCredential,
   describeMapping,
