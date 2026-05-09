@@ -1,11 +1,16 @@
 // ABOUTME: Top-level render function. Handles defuddle/clip dispatch via obsidian-clipper/api,
-// ABOUTME: identifies interpreter slots, and applies overrides. LLM dispatch lives elsewhere
-// ABOUTME: (interpreter.ts) and is called from here when slotOverrides don't cover all slots.
+// identifies interpreter slots, dispatches LLM calls when a providerConfig is supplied,
+// and applies overrides. Returns either a rendered note or a needs_interpretation
+// shape that callers (e.g. the chat-flow MCP path) can resolve themselves.
 
 import { parseHTML } from "linkedom";
 import { installPolyfills } from "./polyfills.ts";
 import { findInterpreterSlots, substituteSlots } from "./tokens.ts";
+import { interpretSlot } from "./interpreter.ts";
+import { scanForInjection } from "./scan.ts";
 import type {
+  ClipperTemplate,
+  InterpreterSlot,
   PageContent,
   PreparedState,
   RenderOptions,
@@ -41,13 +46,20 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
     };
   }
 
+  let resolvedSlots: Record<string, string> = { ...overrides };
+
   if (unresolvedSlots.length > 0 && options.providerConfig) {
-    throw new Error(
-      "Server-side LLM dispatch not yet implemented. Pass slotOverrides for all slots, or wait for interpreter.ts."
-    );
+    resolvedSlots = await dispatchInterpreter({
+      url: options.url,
+      html,
+      template: options.template,
+      slots: unresolvedSlots,
+      overrides,
+      providerConfig: options.providerConfig,
+    });
   }
 
-  const resolvedTemplate = substituteSlots(options.template, overrides);
+  const resolvedTemplate = substituteSlots(options.template, resolvedSlots);
 
   const { clip } = await import("obsidian-clipper/api");
   const result = await clip({
@@ -63,8 +75,43 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
     frontmatter: result.frontmatter,
     content: result.content,
     fullContent: result.fullContent,
-    resolvedSlots: overrides,
+    resolvedSlots,
   };
+}
+
+async function dispatchInterpreter(args: {
+  url: string;
+  html: string;
+  template: ClipperTemplate;
+  slots: InterpreterSlot[];
+  overrides: Record<string, string>;
+  providerConfig: NonNullable<RenderOptions["providerConfig"]>;
+}): Promise<Record<string, string>> {
+  const { applyFilters } = await import("obsidian-clipper/api");
+
+  const pageContext = await buildPageContext(args.url, args.html);
+  const propertyTypes = new Map<string, "text" | "multitext">();
+  for (const prop of args.template.properties) {
+    if (prop.type === "text" || prop.type === "multitext") {
+      propertyTypes.set(prop.name, prop.type);
+    }
+  }
+
+  const resolved: Record<string, string> = { ...args.overrides };
+  for (const slot of args.slots) {
+    const propertyType =
+      slot.location.kind === "property" ? propertyTypes.get(slot.location.propertyName) : undefined;
+    const value = await interpretSlot({
+      slot,
+      pageContext,
+      providerConfig: args.providerConfig,
+      applyFilters,
+      currentUrl: args.url,
+      propertyType,
+    });
+    resolved[slot.key] = value;
+  }
+  return resolved;
 }
 
 async function defaultFetch(url: string): Promise<string> {
@@ -78,11 +125,25 @@ async function defaultFetch(url: string): Promise<string> {
 }
 
 async function buildPageContent(url: string, html: string): Promise<PageContent> {
-  const { document } = parseHTML(html);
-  const title = document.querySelector("title")?.textContent ?? undefined;
+  const ctx = await buildPageContext(url, html);
+  const scan = scanForInjection(ctx.body);
   return {
     source: "external_url",
     trusted: false,
+    url,
+    title: ctx.title,
+    body: ctx.body,
+    suspiciousPhrasesDetected: scan.matches.map((m) => m.pattern),
+  };
+}
+
+async function buildPageContext(
+  url: string,
+  html: string
+): Promise<{ url: string; title: string | undefined; body: string }> {
+  const { document } = parseHTML(html);
+  const title = document.querySelector("title")?.textContent ?? undefined;
+  return {
     url,
     title,
     body: extractTextBody(document),

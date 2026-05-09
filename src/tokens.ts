@@ -1,5 +1,5 @@
 // ABOUTME: Walks template strings to find {{"prompt"|filter|chain}} interpreter tokens.
-// ABOUTME: Generates stable keys for each slot's location and supports literal substitution.
+// Generates stable keys for each slot's location and supports literal substitution.
 
 import type { ClipperTemplate, InterpreterSlot, SlotLocation } from "./types.ts";
 

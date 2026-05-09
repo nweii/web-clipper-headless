@@ -1,5 +1,5 @@
 // ABOUTME: Minimal type declarations for the upstream obsidian-clipper/api module
-// ABOUTME: since the upstream package does not ship its own type declarations.
+// since the upstream package does not ship its own type declarations.
 
 declare module "obsidian-clipper/api" {
   export interface DocumentParser {
@@ -30,4 +30,10 @@ declare module "obsidian-clipper/api" {
     url: string,
     schemaOrgData?: unknown
   ): unknown;
+  // Exposed by web-clipper-headless's build patcher (see scripts/build-upstream.ts).
+  export function applyFilters(
+    value: string,
+    filterString: string,
+    currentUrl?: string
+  ): string;
 }

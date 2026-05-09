@@ -1,5 +1,5 @@
 // ABOUTME: Round 2 — defuddle returns empty against linkedom. Try debug mode and option variations.
-// ABOUTME: Goal: surface the failure mode (silent error vs. low-score filter vs. shape mismatch).
+// Goal: surface the failure mode (silent error vs. low-score filter vs. shape mismatch).
 
 import { parseHTML } from "linkedom";
 import { installPolyfills } from "../src/polyfills.ts";

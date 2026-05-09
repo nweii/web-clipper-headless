@@ -1,5 +1,5 @@
 // ABOUTME: Public types for web-clipper-headless. The library wraps obsidian-clipper's headless API
-// ABOUTME: with LLM interpreter dispatch, multi-provider support, and a settings JSON loader.
+// with LLM interpreter dispatch, multi-provider support, and a settings JSON loader.
 
 export type ClipperTemplate = {
   schemaVersion: string;

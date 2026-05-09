@@ -1,5 +1,5 @@
 // ABOUTME: Globals required by defuddle's bundled Turndown when running outside the browser.
-// ABOUTME: Mirrors the esbuild banner upstream uses for its CLI build.
+// Mirrors the esbuild banner upstream uses for its CLI build.
 
 import { parseHTML } from "linkedom";
 

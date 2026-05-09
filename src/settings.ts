@@ -1,5 +1,5 @@
 // ABOUTME: Loads and parses Web Clipper settings JSON, supporting both full-settings exports
-// ABOUTME: and single-template exports. Detects format by top-level keys.
+// and single-template exports. Detects format by top-level keys.
 
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";

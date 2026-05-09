@@ -1,5 +1,5 @@
 // ABOUTME: Builds obsidian-clipper's headless API bundle (dist/api.mjs) after install,
-// ABOUTME: then patches a linkedom-incompatible line so Defuddle receives the Document.
+// then patches a linkedom-incompatible line so Defuddle receives the Document.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,21 +25,34 @@ const PATCH_NEEDLE = "const documentElement = doc.documentElement || doc;";
 const PATCH_REPLACEMENT = "const documentElement = doc; /* patched by web-clipper-headless: route Defuddle the Document for linkedom compatibility */";
 const PATCHED_MARKER = "patched by web-clipper-headless";
 
+const APPLY_FILTERS_NEEDLE = "function applyFilters(value, filterString, currentUrl) {";
+const APPLY_FILTERS_EXPORT = "\n\n// Added by web-clipper-headless to expose the filter chain runner.\nexport { applyFilters };\n";
+
 function applyLinkedomPatch(): void {
   const source = readFileSync(apiBundle, "utf-8");
   if (source.includes(PATCHED_MARKER)) {
-    console.error("[web-clipper-headless] Linkedom patch already applied.");
+    console.error("[web-clipper-headless] Patches already applied.");
     return;
   }
   if (!source.includes(PATCH_NEEDLE)) {
     console.error(
-      "[web-clipper-headless] WARNING: expected line not found in upstream bundle. " +
+      "[web-clipper-headless] WARNING: documentElement line not found in upstream bundle. " +
         "Upstream may have changed. Open scripts/build-upstream.ts and update PATCH_NEEDLE."
     );
     process.exit(1);
   }
-  writeFileSync(apiBundle, source.replace(PATCH_NEEDLE, PATCH_REPLACEMENT));
-  console.error("[web-clipper-headless] Applied linkedom-compatibility patch.");
+  if (!source.includes(APPLY_FILTERS_NEEDLE)) {
+    console.error(
+      "[web-clipper-headless] WARNING: applyFilters function not found in upstream bundle. " +
+        "Open scripts/build-upstream.ts and update APPLY_FILTERS_NEEDLE."
+    );
+    process.exit(1);
+  }
+  const patched = source.replace(PATCH_NEEDLE, PATCH_REPLACEMENT) + APPLY_FILTERS_EXPORT;
+  writeFileSync(apiBundle, patched);
+  console.error(
+    "[web-clipper-headless] Applied linkedom-compatibility patch and exposed applyFilters."
+  );
 }
 
 if (existsSync(apiBundle)) {

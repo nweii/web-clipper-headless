@@ -1,5 +1,5 @@
 // ABOUTME: Isolated reproduction for the empty-defuddle output we observed in /tmp/clip-test.
-// ABOUTME: Walks polyfill setup, defuddle alone, then clip() — narrows the failure layer.
+// Walks polyfill setup, defuddle alone, then clip() — narrows the failure layer.
 
 import { parseHTML } from "linkedom";
 import { installPolyfills } from "../src/polyfills.ts";
