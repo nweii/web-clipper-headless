@@ -24,3 +24,11 @@ Carry forward unresolved questions or thinking that's ahead of implementation ra
 ## Setup
 
 `bun install && bun run setup` — the second step builds upstream's `dist/api.mjs` (obsidian-clipper is consumed from GitHub, not npm). Tests: `bun test`.
+
+## Durable lessons
+
+Things worth remembering across sessions, learned the hard way.
+
+- **Check upstream's actual implementation before tuning prompts or sanitizing model output.** Surface-level model quality issues (markdown leakage, padded values, formatting noise) often come from architectural choices, not prompt wording. We hit this with per-slot dispatch producing noisy values on Gemini Flash; the fix was switching to batched JSON dispatch like upstream does, not changing the prompt. Prompt tweaks would have been chasing the symptom.
+- **defuddle wants a `Document`, not a `documentElement`.** Upstream's `clip()` does `doc.documentElement || doc`, which routes the wrong shape to defuddle in headless contexts using linkedom. Our build patch in `scripts/build-upstream.ts` fixes this; if defuddle output ever returns empty fields against valid HTML, check whether the patch applied. The marker `patched by web-clipper-headless` lives in `dist/api.mjs` as the idempotency signal.
+- **The patcher must fail loud, never silent.** If upstream changes the line we patch and our string match misses, exit non-zero with an actionable message pointing at `scripts/build-upstream.ts`. A no-op silent fallback would let bad bundles ship.
