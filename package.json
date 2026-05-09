@@ -1,0 +1,24 @@
+{
+  "name": "web-clipper-headless",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Headless Obsidian Web Clipper template renderer with multi-provider LLM interpreter dispatch",
+  "main": "src/index.ts",
+  "bin": {
+    "wch": "bin/cli.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "setup": "bun run scripts/build-upstream.ts"
+  },
+  "dependencies": {
+    "linkedom": "^0.18.0",
+    "obsidian-clipper": "github:obsidianmd/obsidian-clipper"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.5.0"
+  },
+  "license": "MIT"
+}

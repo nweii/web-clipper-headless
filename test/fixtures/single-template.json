@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "0.1.0",
+  "name": "Test Article",
+  "behavior": "create",
+  "noteNameFormat": "{{title}}",
+  "noteContentFormat": "{{content}}",
+  "path": "Clippings",
+  "properties": [
+    { "name": "title", "value": "{{title}}", "type": "text" },
+    { "name": "url", "value": "{{url|split:\"?\"|slice:0,1}}", "type": "text" },
+    { "name": "static_field", "value": "literal value", "type": "text" }
+  ],
+  "triggers": []
+}

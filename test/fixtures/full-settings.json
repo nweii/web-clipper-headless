@@ -1,0 +1,48 @@
+{
+  "general_settings": { "openBehavior": "popup" },
+  "interpreter_settings": {
+    "interpreterEnabled": true,
+    "interpreterModel": "model-default",
+    "models": [
+      {
+        "id": "model-default",
+        "name": "Test Model",
+        "providerId": "provider-test",
+        "providerModelId": "test-model-1",
+        "enabled": true
+      }
+    ],
+    "providers": [
+      {
+        "id": "provider-test",
+        "name": "Anthropic",
+        "baseUrl": "https://api.anthropic.com/v1/messages"
+      }
+    ]
+  },
+  "template_aaa": {
+    "schemaVersion": "0.1.0",
+    "name": "Plain",
+    "behavior": "create",
+    "noteNameFormat": "{{title}}",
+    "noteContentFormat": "{{content}}",
+    "path": "Clippings",
+    "properties": [
+      { "name": "title", "value": "{{title}}", "type": "text" }
+    ],
+    "triggers": []
+  },
+  "template_bbb": {
+    "schemaVersion": "0.1.0",
+    "name": "Interpreted",
+    "behavior": "create",
+    "noteNameFormat": "{{title}}",
+    "noteContentFormat": "Body: {{\"summarize the page\"}}\n\n{{content}}",
+    "path": "Clippings",
+    "properties": [
+      { "name": "title", "value": "{{title}}", "type": "text" },
+      { "name": "tags", "value": "{{\"three lowercase tags\"|split:\",\"}}", "type": "multitext" }
+    ],
+    "triggers": []
+  }
+}
