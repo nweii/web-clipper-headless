@@ -50,16 +50,11 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
   const resolvedTemplate = substituteSlots(options.template, overrides);
 
   const { clip } = await import("obsidian-clipper/api");
-  const documentParser = {
-    parseFromString(h: string) {
-      return parseHTML(h).document;
-    },
-  };
   const result = await clip({
     html,
     url: options.url,
     template: resolvedTemplate as never,
-    documentParser,
+    documentParser: makeDocumentParser(),
   });
 
   return {
@@ -97,4 +92,15 @@ async function buildPageContent(url: string, html: string): Promise<PageContent>
 function extractTextBody(doc: Document): string {
   const article = doc.querySelector("article") ?? doc.querySelector("main") ?? doc.body;
   return article?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+// Returns the linkedom Document directly. Upstream's clip() bundle is patched at build
+// time by scripts/build-upstream.ts so Defuddle receives the Document instead of its
+// documentElement (the patch route is required for linkedom compatibility).
+function makeDocumentParser() {
+  return {
+    parseFromString(h: string) {
+      return parseHTML(h).document;
+    },
+  };
 }
