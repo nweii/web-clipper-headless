@@ -7,7 +7,9 @@ Headless renderer for [Obsidian Web Clipper](https://github.com/obsidianmd/obsid
 
 ## What this is
 
-Take a URL plus a Web Clipper template name, return a rendered Obsidian note. Headlessly. From any runtime: Node, Bun, Cloudflare Workers, Deno. Reuses the user's existing Web Clipper template format and provider configuration so there's no duplicate setup.
+Take a URL (and optionally a template name), return a rendered Obsidian note. Headlessly. From any runtime: Node, Bun, Cloudflare Workers, Deno. Reuses the user's existing Web Clipper template format and provider configuration so there's no duplicate setup.
+
+When the template name is omitted, the library auto-matches a template by checking each one's `triggers` array (URL prefix, regex, or `schema:@Type`) — same matching upstream's browser extension uses. Explicit template names always override.
 
 The official browser extension wins for any auth-walled or session-bound page (X threads, paywalled articles, anything behind a login). This package is for the public web — webhooks, MCP servers, CLI, any Node-compatible runtime.
 
@@ -50,7 +52,10 @@ The polyfill call is required outside the browser. It sets `globalThis.window`, 
 ## Quick start: CLI
 
 ```bash
-# Deterministic clip (no LLM): only static template variables resolve, interpreter slots stay empty
+# Auto-match by trigger (no -t flag) — picks the right template based on URL/schema
+bunx wch https://news.example.com/article -s ~/clipper-settings.json --interpret
+
+# Explicit template (always overrides auto-match)
 bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json
 
 # With server-side interpreter

@@ -25,11 +25,11 @@ declare module "obsidian-clipper/api" {
   }
 
   export function clip(options: ClipOptions): Promise<ClipResult>;
-  export function matchTemplate(
-    templates: unknown[],
+  export function matchTemplate<T = unknown>(
+    templates: T[],
     url: string,
     schemaOrgData?: unknown
-  ): unknown;
+  ): T | undefined;
   // Exposed by web-clipper-headless's build patcher (see scripts/build-upstream.ts).
   export function applyFilters(
     value: string,

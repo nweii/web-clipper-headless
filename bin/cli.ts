@@ -8,7 +8,7 @@ import { renderFromSettings, installPolyfills } from "../src/index.ts";
 
 type Args = {
   url: string;
-  template: string;
+  template?: string;
   settings: string;
   interpret: boolean;
   output?: string;
@@ -22,10 +22,13 @@ function printUsage() {
 web-clipper-headless — render a Web Clipper template from a URL
 
 Usage:
-  wch <url> --template <name> [--settings <path>] [options]
+  wch <url> [--template <name>] [--settings <path>] [options]
+
+If --template is omitted, the template is auto-matched by URL/schema triggers.
+Explicit --template always wins over auto-match.
 
 Options:
-  -t, --template <name>          Template name from your clipper settings JSON (required)
+  -t, --template <name>          Template name (optional — auto-match by triggers if absent)
   -s, --settings <path>          Path to settings JSON or folder of templates
                                  (defaults to WEB_CLIPPER_SETTINGS_PATH env var)
   -o, --output <file>            Write to file (default: stdout)
@@ -49,7 +52,7 @@ Examples:
 function parseArgs(argv: string[]): Args {
   const args = argv.slice(2);
   let url = "";
-  let template = "";
+  let template: string | undefined;
   let settings = "";
   let interpret = false;
   let output: string | undefined;
@@ -107,7 +110,6 @@ function parseArgs(argv: string[]): Args {
   }
 
   if (!url) fail("URL is required.");
-  if (!template) fail("--template is required.");
   if (!settings) {
     fail(
       "--settings is required (or set WEB_CLIPPER_SETTINGS_PATH env var to your clipper settings JSON path)."
@@ -144,7 +146,7 @@ async function main(): Promise<void> {
 
   if (result.status === "needs_interpretation") {
     console.error(
-      `\nTemplate '${args.template}' has ${result.unresolvedSlots.length} interpreter slot(s) and no provider was configured.`
+      `\nTemplate '${result.template.name}' has ${result.unresolvedSlots.length} interpreter slot(s) and no provider was configured.`
     );
     console.error("Either pass --interpret to dispatch server-side, or pre-fill via --slot key=value.");
     console.error("\nUnresolved slots:");

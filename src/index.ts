@@ -2,6 +2,7 @@
 
 export { render } from "./render.ts";
 export { renderFromSettings } from "./render-from-settings.ts";
+export { matchTemplateByUrl, TemplateMatchFailedError } from "./match.ts";
 export { installPolyfills } from "./polyfills.ts";
 export { loadSettings, parseClipperSettings, findTemplate } from "./settings.ts";
 export { findInterpreterSlots, substituteSlots } from "./tokens.ts";
