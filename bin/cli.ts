@@ -22,11 +22,12 @@ function printUsage() {
 web-clipper-headless — render a Web Clipper template from a URL
 
 Usage:
-  wch <url> --template <name> --settings <path> [options]
+  wch <url> --template <name> [--settings <path>] [options]
 
 Options:
   -t, --template <name>          Template name from your clipper settings JSON (required)
-  -s, --settings <path>          Path to settings JSON or folder of templates (required)
+  -s, --settings <path>          Path to settings JSON or folder of templates
+                                 (defaults to WEB_CLIPPER_SETTINGS_PATH env var)
   -o, --output <file>            Write to file (default: stdout)
       --interpret                Run the LLM interpreter server-side (otherwise interpreter slots stay empty)
       --credentials <source>     'env' | 'json' | 'auto' (default: auto)
@@ -101,9 +102,17 @@ function parseArgs(argv: string[]): Args {
     }
   }
 
+  if (!settings && process.env.WEB_CLIPPER_SETTINGS_PATH) {
+    settings = process.env.WEB_CLIPPER_SETTINGS_PATH;
+  }
+
   if (!url) fail("URL is required.");
   if (!template) fail("--template is required.");
-  if (!settings) fail("--settings is required.");
+  if (!settings) {
+    fail(
+      "--settings is required (or set WEB_CLIPPER_SETTINGS_PATH env var to your clipper settings JSON path)."
+    );
+  }
 
   return { url, template, settings, interpret, output, credentialSource, slotOverrides };
 }

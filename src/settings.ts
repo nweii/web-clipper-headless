@@ -66,7 +66,7 @@ export function parseClipperSettings(raw: unknown): ClipperSettings {
   const obj = raw as Record<string, unknown>;
   const templates: ClipperTemplate[] = [];
   for (const [key, value] of Object.entries(obj)) {
-    if (key.startsWith("template_") && isSingleTemplate(value)) {
+    if (key.startsWith("template_") && looksLikeTemplate(value)) {
       templates.push(value as ClipperTemplate);
     }
   }
@@ -129,6 +129,7 @@ export function findTemplate(
   return match;
 }
 
+// Top-level single-template export — schemaVersion is the unique marker.
 function isSingleTemplate(value: unknown): boolean {
   return (
     typeof value === "object" &&
@@ -136,6 +137,14 @@ function isSingleTemplate(value: unknown): boolean {
     "schemaVersion" in value &&
     "noteContentFormat" in value
   );
+}
+
+// Inside a full-settings export, the `template_*` key already signals "this is a template",
+// so the structural check is just "has the minimum fields needed to render." schemaVersion
+// is optional — older or hand-edited templates may omit it.
+function looksLikeTemplate(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  return "name" in value && "noteContentFormat" in value;
 }
 
 function isFullSettings(value: unknown): boolean {
