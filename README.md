@@ -1,37 +1,58 @@
 # web-clipper-headless
 
-Headless renderer for [Obsidian Web Clipper](https://github.com/obsidianmd/obsidian-clipper) templates. Wraps the upstream `obsidian-clipper/api` module with a multi-provider LLM interpreter dispatch, settings JSON loader, and CLI.
+Use [Obsidian Web Clipper](https://github.com/obsidianmd/obsidian-clipper) templates without a browser. Give it a URL, get back a rendered Obsidian note — from a CLI, a script, an MCP tool, a webhook, anywhere you can run JavaScript.
 
 > [!WARNING]
-> Pre-alpha. Private development repo. APIs will change.
+> Pre-alpha. APIs will change.
 
-## What this is
+## What it does
 
-Take a URL (and optionally a template name), return a rendered Obsidian note. Headlessly. From any runtime: Node, Bun, Cloudflare Workers, Deno. Reuses the user's existing Web Clipper template format and provider configuration so there's no duplicate setup.
+You already have Web Clipper templates set up in your browser. They define how a page becomes a note: which fields to extract, where to save it, what to ask an LLM to fill in. This package runs those same templates outside the browser, reading the same `web-clipper-settings.json` you already have.
 
-When the template name is omitted, the library auto-matches a template by checking each one's `triggers` array (URL prefix, regex, or `schema:@Type`) — same matching upstream's browser extension uses. Explicit template names always override.
+That means you can:
 
-The official browser extension wins for any auth-walled or session-bound page (X threads, paywalled articles, anything behind a login). This package is for the public web — webhooks, MCP servers, CLI, any Node-compatible runtime.
+- Clip a URL from the command line.
+- Build an MCP tool that lets Claude clip pages into your vault.
+- Run a webhook that turns a shared link into a note.
+- Pre-process URLs in a script before they reach your vault.
+
+Templates auto-match by URL trigger or `schema:@Type`, the same as the extension does. Pass an explicit template name to override.
+
+The browser extension still wins for anything behind a login (X threads, paywalled articles, anything session-bound). This package reads the public HTML, so use it for the public web.
 
 ## Setup
 
-`obsidian-clipper` is consumed from GitHub (not yet on npm), so its headless API bundle has to be built once after install:
-
 ```bash
 bun install
-bun run setup       # builds + patches obsidian-clipper's dist/api.mjs
-bun test            # all tests pass
+bun run setup     # builds obsidian-clipper's headless bundle
+bun test
 ```
 
-The `setup` step is opt-in rather than a postinstall hook so installing this package never silently runs upstream's build. It also applies a small linkedom-compatibility patch to the upstream bundle (see `scripts/build-upstream.ts` for details).
+`setup` is a separate step because obsidian-clipper isn't on npm; we build it from GitHub the first time.
+
+## Quick start: CLI
+
+```bash
+# Auto-match by URL trigger
+bunx wch https://news.example.com/article -s ~/clipper-settings.json --interpret
+
+# Explicit template
+bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json --interpret
+
+# Pre-fill specific interpreter slots
+bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json \
+    --slot slot_0="durable note-taking"
+
+# Write to a file
+bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json -o note.md
+```
+
+`bunx wch --help` for the full flag reference.
 
 ## Quick start: library
 
 ```ts
-import {
-  installPolyfills,
-  renderFromSettings,
-} from "web-clipper-headless";
+import { installPolyfills, renderFromSettings } from "web-clipper-headless";
 
 installPolyfills();
 
@@ -39,7 +60,7 @@ const result = await renderFromSettings({
   url: "https://stephango.com/file-over-app",
   settingsPath: "/path/to/web-clipper-settings.json",
   templateName: "Full text",
-  useInterpreter: true,    // run LLM server-side; or pre-fill via slotOverrides
+  useInterpreter: true,
 });
 
 if (result.status === "rendered") {
@@ -47,113 +68,76 @@ if (result.status === "rendered") {
 }
 ```
 
-The polyfill call is required outside the browser. It sets `globalThis.window`, `globalThis.DOMParser`, and `globalThis.document` from `linkedom` so defuddle's bundled Turndown initializes correctly. Safe to call multiple times.
+`installPolyfills()` is required outside the browser; it sets up `window`, `DOMParser`, and `document` from `linkedom`. Safe to call multiple times.
 
-## Quick start: CLI
+## Three ways to call render()
 
-```bash
-# Auto-match by trigger (no -t flag) — picks the right template based on URL/schema
-bunx wch https://news.example.com/article -s ~/clipper-settings.json --interpret
+| You pass | You get |
+|---|---|
+| A template with no LLM slots, or all slots covered by `slotOverrides` | A rendered note |
+| `providerConfig` set | A rendered note; the library calls the LLM for you |
+| Neither | `{ status: "needs_interpretation", unresolvedSlots, pageContent }` — the caller fills slots and calls again |
 
-# Explicit template (always overrides auto-match)
-bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json
-
-# With server-side interpreter
-bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json --interpret
-
-# Pre-fill specific interpreter slots (useful for chat-driven flows)
-bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json \
-    --slot slot_0="durable note-taking"
-
-# Write to file instead of stdout
-bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json -o note.md
-```
-
-`bunx wch --help` for the full flag reference.
-
-## Three call patterns
-
-The library is one function, three call shapes — picked by what you pass:
-
-| Shape | What you pass | What you get |
-|---|---|---|
-| **Deterministic** | template with no interpreter slots, OR all slots covered by `slotOverrides` | `{ status: "rendered", filename, fullContent, ... }` |
-| **Headless w/ LLM** | `providerConfig` set; library dispatches LLM calls server-side | `{ status: "rendered", ..., resolvedSlots }` |
-| **Chat-driven** | no `providerConfig`, no full overrides | `{ status: "needs_interpretation", unresolvedSlots, pageContent, preparedState }` — caller fills slots, calls again with `slotOverrides` |
-
-The third shape is for environments where the calling agent is already an LLM (Claude in claude.ai, Claude Code) and should fill the interpreter slots itself rather than having the library make a separate API call.
+The third shape is for when the caller is itself an LLM (Claude in claude.ai, an agent in Claude Code) and should fill slots directly rather than spinning up a second API call.
 
 ## Provider configuration
 
-The library reads providers from your clipper settings JSON's `interpreter_settings.providers[]`. Credential resolution chain:
+Providers are read from `interpreter_settings.providers[]` in your clipper settings JSON. Credential lookup:
 
-1. **Env var** (matched by provider name, see table below) — wins if set
-2. **`apiKey` from clipper JSON** — used if env var is unset and `credentialSource !== 'env'`
-3. **Error** — actionable, lists which env vars were checked
+1. Env var (per the table below) — wins if set.
+2. `apiKey` from the JSON — used when the env var is unset and `credentialSource !== 'env'`.
+3. Otherwise, an error listing which env vars were checked.
 
-### Provider name → env var mapping
+Env var names follow each provider's official SDK, so existing keys work as-is:
 
-Conventions follow each provider's official SDK so existing keys work without renaming:
+| Provider name (case-insensitive substring) | Env var |
+|---|---|
+| `anthropic`, `claude` | `ANTHROPIC_API_KEY` |
+| `openai` (without "azure") | `OPENAI_API_KEY` |
+| `azure` | `AZURE_OPENAI_API_KEY` |
+| `google`, `gemini` | `GEMINI_API_KEY` |
+| `openrouter` | `OPENROUTER_API_KEY` |
+| `deepseek` | `DEEPSEEK_API_KEY` |
+| `groq` | `GROQ_API_KEY` |
+| `mistral` | `MISTRAL_API_KEY` |
+| `perplexity` | `PERPLEXITY_API_KEY` |
+| `xai`, `grok` | `XAI_API_KEY` |
+| `cohere` | `COHERE_API_KEY` |
+| `huggingface`, `hugging face` | `HF_TOKEN` |
+| `ollama` | (none — local) |
 
-| Clipper `providers[].name` (case-insensitive substring) | Env var | Adapter |
-|---|---|---|
-| `anthropic`, `claude` | `ANTHROPIC_API_KEY` | anthropic native |
-| `openai` (without "azure") | `OPENAI_API_KEY` | openai-compatible |
-| `azure` | `AZURE_OPENAI_API_KEY` | openai-compatible |
-| `google`, `gemini` | `GEMINI_API_KEY` | openai-compatible |
-| `openrouter` | `OPENROUTER_API_KEY` | openai-compatible |
-| `deepseek` | `DEEPSEEK_API_KEY` | openai-compatible |
-| `groq` | `GROQ_API_KEY` | openai-compatible |
-| `mistral` | `MISTRAL_API_KEY` | openai-compatible |
-| `perplexity` | `PERPLEXITY_API_KEY` | openai-compatible |
-| `xai`, `grok` | `XAI_API_KEY` | openai-compatible |
-| `cohere` | `COHERE_API_KEY` | cohere |
-| `huggingface`, `hugging face` | `HF_TOKEN` | openai-compatible |
-| `ollama` | (none — local) | openai-compatible |
-
-Unknown provider names fall back to `${UPPER_SNAKE(name)}_API_KEY`. Useful for custom OpenAI-compatible endpoints.
+Unknown names fall back to `${UPPER_SNAKE(name)}_API_KEY`, so custom OpenAI-compatible endpoints work.
 
 ## Threat model
 
-Two paths, two postures.
+Two postures, depending on who's running the LLM.
 
-### Server-side LLM (headless, webhook)
+**Server-side (the library calls the LLM).** Each interpreter call runs in isolation: no tools, no memory, no vault access. The system prompt marks page content as untrusted and wraps it in `<page>...</page>`. Page content is char-capped before send (default 64k chars, ~16k tokens); LLM output is char-capped per slot (1000 text, 500 multitext). Path, filename, and property names always come from the template, never from page content or model output.
 
-Each interpreter call runs in an isolated context: no tools, no memory of the outer task, no vault access. The system prompt declares page content untrusted and wraps it in `<page>...</page>` tags. Output is length-capped before substitution. Path, filename, and property names always come from the template, never from page content or LLM output.
+**Caller-side (Claude in chat fills the slots).** The caller sees `pageContent` with explicit `trusted: false` and `source: "external_url"` markers, plus a `suspiciousPhrasesDetected` list. The presumption is human-in-the-loop, not an unsupervised agent.
 
-Page content is char-capped (default 64k chars input, ~16k tokens) before sending to the LLM. LLM output is char-capped per slot (1000 for text, 500 for multitext). Both configurable via `InterpreterOptions`.
-
-### Pattern detection (soft signal)
-
-Before LLM dispatch, a small regex pass scans the page content for common prompt-injection markers (role overrides, boundary tokens, instruction-override phrases, persona-shift attempts). Matches are recorded and surfaced in the response.
-
-This is **not** a security boundary — the no-tools isolation is. Pattern detection is signal, not gate. It does not refuse to clip pages *about* prompt injection: security writeups, tutorials, and articles that quote injection examples are all legitimate.
-
-### Chat-session LLM
-
-In the third call shape, the caller's LLM (Claude in chat) sees page content directly and fills interpreter slots itself. The caller is presumed to be a human-in-the-loop session, not an unsupervised agent. The `pageContent` field is structured with explicit `trusted: false` and `source: "external_url"` markers; `suspiciousPhrasesDetected` lists any pattern matches.
+A regex pass scans page content for prompt-injection markers (role overrides, boundary tokens, persona-shift phrases) and surfaces matches in the response. This is signal, not a gate — pages *about* prompt injection (writeups, tutorials, examples) still clip fine.
 
 ## Known limitations
 
-- **CSS-selector variables degrade silently** against JavaScript-rendered content. Selectors work fine on static HTML via linkedom, but cannot see content rendered after page load (lazy-loaded sections, SPA routes, content injected client-side). Failed selectors return empty strings.
-- **Polyfills required outside the browser.** `installPolyfills()` is the canonical setup; the library expects it to have been called.
-- **Auth-walled pages won't work.** `defuddle` runs against the public HTML; X threads, paywalled articles, anything requiring a session will fail to extract. This is by design; use the official browser extension for those.
-- **Token caps may shorten LLM output** vs the official extension. Per-template configuration available via `InterpreterOptions`.
-- **Upstream bundle patching** — `bun run setup` patches `node_modules/obsidian-clipper/dist/api.mjs` to make defuddle linkedom-compatible and to expose `applyFilters`. The patcher exits with an error if upstream's bundle drifts so the patch can't apply.
+- **JavaScript-rendered content is invisible.** Selectors run against the raw HTML; lazy-loaded sections and SPA routes won't be there. Failed selectors return empty strings.
+- **Auth-walled pages won't work.** Public HTML only. Use the browser extension for anything behind a login.
+- **Token caps may truncate LLM output** compared to the official extension. Configurable via `InterpreterOptions`.
+- **The upstream bundle is patched on setup** to make defuddle linkedom-compatible and to expose `applyFilters`. If upstream drifts, `bun run setup` fails loudly rather than shipping a silently-broken bundle.
 
 ## Architecture
 
 ```
 src/
-├── render.ts              top-level render() — defuddle/clip dispatch + interpreter coordination
-├── render-from-settings.ts  convenience wrapper for the (settings path + template name) input shape
-├── tokens.ts              {{"prompt"|filters}} slot finder + literal substitution
-├── interpreter.ts         per-slot LLM dispatch with untrusted-content framing + caps + filter chain
-├── settings.ts            JSON loader: full-settings vs single-template detection, folder mode
-├── credentials.ts         env → JSON → error resolution chain
-├── provider-mapping.ts    clipper provider name → env var convention table
-├── scan.ts                regex pattern detection (soft signal, not a boundary)
-├── polyfills.ts           globalThis.window/DOMParser/document via linkedom
+├── render.ts              top-level render() — defuddle/clip + interpreter coordination
+├── render-from-settings.ts  wrapper for the (settings path + template name) shape
+├── tokens.ts              {{"prompt"|filters}} slot finder + substitution
+├── interpreter.ts         LLM dispatch with untrusted-content framing + caps + filter chain
+├── settings.ts            JSON loader (full settings vs single template, folder mode)
+├── credentials.ts         env → JSON → error resolution
+├── provider-mapping.ts    provider name → env var table
+├── scan.ts                prompt-injection pattern detection
+├── polyfills.ts           window/DOMParser/document via linkedom
 ├── providers/anthropic.ts
 ├── providers/openai-compatible.ts
 └── types.ts
