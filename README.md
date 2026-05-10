@@ -12,7 +12,7 @@ You already have Web Clipper templates set up in your browser. They define how a
 That means you can:
 
 - Clip a URL from the command line.
-- Build an MCP tool that lets Claude clip pages into your vault.
+- Build an MCP tool that lets Claude clip pages into your vault — see [obsidian-remote-mcp](https://github.com/nweii/obsidian-remote-mcp) for a working example.
 - Run a webhook that turns a shared link into a note.
 - Pre-process URLs in a script before they reach your vault.
 
