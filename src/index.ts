@@ -3,6 +3,12 @@
 export { render } from "./render.ts";
 export { renderFromSettings } from "./render-from-settings.ts";
 export { matchTemplateByUrl, TemplateMatchFailedError } from "./match.ts";
+export {
+  assertHeadlessCompatible,
+  findHeadlessIncompatibleVariables,
+  TemplateRequiresUserInputError,
+} from "./headless-check.ts";
+export type { HeadlessIncompatibleVariable } from "./headless-check.ts";
 export { installPolyfills } from "./polyfills.ts";
 export { loadSettings, parseClipperSettings, findTemplate } from "./settings.ts";
 export { findInterpreterSlots, substituteSlots } from "./tokens.ts";

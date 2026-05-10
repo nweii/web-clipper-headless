@@ -8,6 +8,7 @@ import { installPolyfills } from "./polyfills.ts";
 import { findInterpreterSlots, substituteSlots } from "./tokens.ts";
 import { interpretSlots } from "./interpreter.ts";
 import { scanForInjection } from "./scan.ts";
+import { assertHeadlessCompatible } from "./headless-check.ts";
 import type {
   ClipperTemplate,
   InterpreterSlot,
@@ -19,6 +20,7 @@ import type {
 
 export async function render(options: RenderOptions): Promise<RenderResult> {
   installPolyfills();
+  assertHeadlessCompatible(options.template);
 
   const html = options.fetchHtml
     ? await options.fetchHtml(options.url)
