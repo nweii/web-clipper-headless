@@ -61,6 +61,7 @@ export async function renderFromSettings(
     template,
     providerConfig,
     slotOverrides: opts.slotOverrides,
+    variableOverrides: opts.variableOverrides,
     fetchHtml,
   });
 

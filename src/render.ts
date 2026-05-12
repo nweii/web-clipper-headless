@@ -28,10 +28,11 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
 
   const slots = findInterpreterSlots(options.template);
   const overrides = options.slotOverrides ?? {};
+  const variableOverrides = options.variableOverrides ?? {};
   const unresolvedSlots = slots.filter((s) => !(s.key in overrides));
 
   if (unresolvedSlots.length > 0 && !options.providerConfig) {
-    const pageContent = await buildPageContent(options.url, html);
+    const pageContent = await buildPageContent(options.url, html, variableOverrides);
     const preparedState: PreparedState = {
       schemaVersion: 1,
       url: options.url,
@@ -58,6 +59,7 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
       slots: unresolvedSlots,
       overrides,
       providerConfig: options.providerConfig,
+      variableOverrides,
     });
   }
 
@@ -69,6 +71,7 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
     url: options.url,
     template: resolvedTemplate as never,
     documentParser: makeDocumentParser(),
+    variableOverrides: Object.keys(variableOverrides).length ? variableOverrides : undefined,
   });
 
   return {
@@ -88,10 +91,11 @@ async function dispatchInterpreter(args: {
   slots: InterpreterSlot[];
   overrides: Record<string, string>;
   providerConfig: NonNullable<RenderOptions["providerConfig"]>;
+  variableOverrides: Record<string, string>;
 }): Promise<Record<string, string>> {
   const { applyFilters } = await import("obsidian-clipper/api");
 
-  const pageContext = await buildPageContext(args.url, args.html);
+  const pageContext = await buildPageContext(args.url, args.html, args.variableOverrides);
   const propertyTypes = new Map<string, "text" | "multitext">();
   for (const prop of args.template.properties) {
     if (prop.type === "text" || prop.type === "multitext") {
@@ -121,8 +125,12 @@ async function defaultFetch(url: string): Promise<string> {
   return response.text();
 }
 
-async function buildPageContent(url: string, html: string): Promise<PageContent> {
-  const ctx = await buildPageContext(url, html);
+async function buildPageContent(
+  url: string,
+  html: string,
+  variableOverrides: Record<string, string>
+): Promise<PageContent> {
+  const ctx = await buildPageContext(url, html, variableOverrides);
   const scan = scanForInjection(ctx.body);
   return {
     source: "external_url",
@@ -136,15 +144,17 @@ async function buildPageContent(url: string, html: string): Promise<PageContent>
 
 async function buildPageContext(
   url: string,
-  html: string
+  html: string,
+  variableOverrides: Record<string, string>
 ): Promise<{ url: string; title: string | undefined; body: string }> {
   const { document } = parseHTML(html);
-  const title = document.querySelector("title")?.textContent ?? undefined;
-  return {
-    url,
-    title,
-    body: extractTextBody(document),
-  };
+  const titleOverride = variableOverrides.title;
+  const title = titleOverride ?? (document.querySelector("title")?.textContent ?? undefined);
+  // `content` override is the caller's authoritative body (e.g. bird-fetched thread
+  // markdown for an X URL where defuddle can't see the JS-rendered content).
+  // Use it for interpreter context so the LLM resolves slots against real material.
+  const body = variableOverrides.content ?? extractTextBody(document);
+  return { url, title, body };
 }
 
 function extractTextBody(doc: Document): string {

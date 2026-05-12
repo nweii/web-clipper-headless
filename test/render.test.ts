@@ -155,6 +155,95 @@ describe("render — server-side LLM dispatch", () => {
   });
 });
 
+describe("render — variable overrides", () => {
+  test("variableOverrides.content replaces defuddle's content in rendered body", async () => {
+    const html = await articleHtml();
+    const result = await render({
+      url: "https://example.com/article",
+      template: deterministicTemplate,
+      fetchHtml: async () => html,
+      variableOverrides: { content: "OVERRIDDEN BODY MARKDOWN" },
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.content).toContain("OVERRIDDEN BODY MARKDOWN");
+    expect(result.content).not.toContain("Note-taking systems fail");
+  });
+
+  test("non-overridden variables still come from defuddle", async () => {
+    const html = await articleHtml();
+    const result = await render({
+      url: "https://example.com/article",
+      template: deterministicTemplate,
+      fetchHtml: async () => html,
+      variableOverrides: { content: "OVERRIDDEN" },
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.frontmatter).toContain('title: "The Pragmatic Note Taker"');
+    expect(result.frontmatter).toContain('author: "Sam Example"');
+  });
+
+  test("variableOverrides override frontmatter property values too", async () => {
+    const html = await articleHtml();
+    const result = await render({
+      url: "https://example.com/article",
+      template: deterministicTemplate,
+      fetchHtml: async () => html,
+      variableOverrides: { author: "Bird-Fetched Author" },
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.frontmatter).toContain('author: "Bird-Fetched Author"');
+  });
+
+  test("content override flows into needs_interpretation page body", async () => {
+    const html = await articleHtml();
+    const result = await render({
+      url: "https://example.com/article",
+      template: interpreterTemplate,
+      fetchHtml: async () => html,
+      variableOverrides: { content: "EXTERNALLY FETCHED BODY" },
+    });
+    expect(result.status).toBe("needs_interpretation");
+    if (result.status !== "needs_interpretation") return;
+    expect(result.pageContent.body).toBe("EXTERNALLY FETCHED BODY");
+  });
+
+  test("title override flows into needs_interpretation page title", async () => {
+    const html = await articleHtml();
+    const result = await render({
+      url: "https://example.com/article",
+      template: interpreterTemplate,
+      fetchHtml: async () => html,
+      variableOverrides: { title: "Overridden Title" },
+    });
+    expect(result.status).toBe("needs_interpretation");
+    if (result.status !== "needs_interpretation") return;
+    expect(result.pageContent.title).toBe("Overridden Title");
+  });
+
+  test("no overrides → identical behavior to baseline (regression guard)", async () => {
+    const html = await articleHtml();
+    const baseline = await render({
+      url: "https://example.com/article",
+      template: deterministicTemplate,
+      fetchHtml: async () => html,
+    });
+    const withEmpty = await render({
+      url: "https://example.com/article",
+      template: deterministicTemplate,
+      fetchHtml: async () => html,
+      variableOverrides: {},
+    });
+    expect(baseline.status).toBe("rendered");
+    expect(withEmpty.status).toBe("rendered");
+    if (baseline.status !== "rendered" || withEmpty.status !== "rendered") return;
+    expect(withEmpty.content).toBe(baseline.content);
+    expect(withEmpty.frontmatter).toBe(baseline.frontmatter);
+  });
+});
+
 describe("renderFromSettings", () => {
   test("loads template by name and renders deterministically", async () => {
     const html = await articleHtml();

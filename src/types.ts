@@ -86,6 +86,11 @@ export type RenderOptions = {
   template: ClipperTemplate;
   providerConfig?: ProviderConfig;
   slotOverrides?: Record<string, string>;
+  // Corrective overrides applied on top of defuddle's auto-extracted variables.
+  // Keyed by bare variable name (e.g. "content", "title", "author"). Defuddle still
+  // runs on the fetched HTML for everything not overridden; trigger matching and
+  // template selection are unaffected.
+  variableOverrides?: Record<string, string>;
   fetchHtml?: (url: string) => Promise<string>;
 };
 

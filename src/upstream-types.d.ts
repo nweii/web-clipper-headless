@@ -13,6 +13,10 @@ declare module "obsidian-clipper/api" {
     documentParser: DocumentParser;
     propertyTypes?: Record<string, string>;
     parsedDocument?: unknown;
+    // Exposed by web-clipper-headless's build patcher (see scripts/build-upstream.ts).
+    // Caller-supplied values patch onto the variables dict after defuddle extraction,
+    // before template compilation. Keys are bare variable names (e.g. "content", "title").
+    variableOverrides?: Record<string, string>;
   }
 
   export interface ClipResult {
