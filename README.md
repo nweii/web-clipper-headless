@@ -1,29 +1,36 @@
 # web-clipper-headless
 
-Headless renderer for [Obsidian Web Clipper](https://github.com/obsidianmd/obsidian-clipper) templates. Wraps the upstream `obsidian-clipper/api` module with a multi-provider LLM interpreter dispatch, settings JSON loader, and CLI.
+Use your [Obsidian Web Clipper](https://github.com/obsidianmd/obsidian-clipper) templates from outside the browser, anywhere JavaScript runs.
 
-> [!WARNING]
-> Pre-alpha. Private development repo. APIs will change.
+Point it at a URL and your existing `web-clipper-settings.json`. It picks the right template the same way the browser extension does (matching the URL or schema against each template's `triggers`), runs the same defuddle extraction, dispatches interpreter prompts to the same LLM providers you already configured, and returns the rendered note.
 
-## What this is
+This is a personal tool I open-sourced in case it's useful to others. Treat it as a working project, not a maintained product.
 
-Take a URL (and optionally a template name), return a rendered Obsidian note. Headlessly. From any runtime: Node, Bun, Cloudflare Workers, Deno. Reuses the user's existing Web Clipper template format and provider configuration so there's no duplicate setup.
+## What you need
 
-When the template name is omitted, the library auto-matches a template by checking each one's `triggers` array (URL prefix, regex, or `schema:@Type`) — same matching upstream's browser extension uses. Explicit template names always override.
+- **Node 20+ or Bun** to run it. Library code is TypeScript with no platform-specific dependencies.
+- **An existing `web-clipper-settings.json`** — export it from the Web Clipper extension's settings, or hand-write one in the same format.
+- **API keys** for whichever LLM providers your templates use, if any of them have interpreter slots. Either from the exported settings JSON (which carries them by default) or from environment variables — env wins when both are present. See [Provider configuration](#provider-configuration) for the full resolution chain and per-provider env var names.
 
-The official browser extension wins for any auth-walled or session-bound page (X threads, paywalled articles, anything behind a login). This package is for the public web — webhooks, MCP servers, CLI, any Node-compatible runtime.
+Your vault does not need to live on the same machine. This library returns the rendered note as a string; writing it to disk, sending it through an MCP tool, or POSTing it somewhere is the caller's job. The only file the library reads from disk is the settings JSON.
+
+## When to use this (and when not to)
+
+Reach for this when clipping needs to happen server-side: webhook workflows, MCP tools, cron jobs, agents that clip into a vault on their own. Also for chat-driven cases where the LLM in the loop fills interpreter slots itself rather than the library making its own call.
+
+Stick with the official browser extension for anything behind a session: X threads, paywalled articles, logged-in dashboards. This package fetches public HTML; it has no cookies and no session.
 
 ## Setup
 
-`obsidian-clipper` is consumed from GitHub (not yet on npm), so its headless API bundle has to be built once after install:
+`obsidian-clipper` ships from GitHub rather than npm, so its headless API bundle is built once after install:
 
 ```bash
 bun install
 bun run setup       # builds + patches obsidian-clipper's dist/api.mjs
-bun test            # all tests pass
+bun test
 ```
 
-The `setup` step is opt-in rather than a postinstall hook so installing this package never silently runs upstream's build. It also applies a small linkedom-compatibility patch to the upstream bundle (see `scripts/build-upstream.ts` for details).
+Setup is a separate step rather than a postinstall hook so installing this package never silently runs upstream's build. The step also applies a small linkedom-compatibility patch to the upstream bundle (see `scripts/build-upstream.ts`).
 
 ## Quick start: library
 
@@ -73,7 +80,7 @@ bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json -
 
 ## Three call patterns
 
-The library is one function, three call shapes — picked by what you pass:
+The same `render()` call behaves three ways depending on what you pass:
 
 | Shape | What you pass | What you get |
 |---|---|---|
@@ -115,8 +122,6 @@ Unknown provider names fall back to `${UPPER_SNAKE(name)}_API_KEY`. Useful for c
 
 ## Threat model
 
-Two paths, two postures.
-
 ### Server-side LLM (headless, webhook)
 
 Each interpreter call runs in an isolated context: no tools, no memory of the outer task, no vault access. The system prompt declares page content untrusted and wraps it in `<page>...</page>` tags. Output is length-capped before substitution. Path, filename, and property names always come from the template, never from page content or LLM output.
@@ -127,7 +132,7 @@ Page content is char-capped (default 64k chars input, ~16k tokens) before sendin
 
 Before LLM dispatch, a small regex pass scans the page content for common prompt-injection markers (role overrides, boundary tokens, instruction-override phrases, persona-shift attempts). Matches are recorded and surfaced in the response.
 
-This is **not** a security boundary — the no-tools isolation is. Pattern detection is signal, not gate. It does not refuse to clip pages *about* prompt injection: security writeups, tutorials, and articles that quote injection examples are all legitimate.
+Pattern detection is informational only. The no-tools isolation above is the actual security boundary; matches are surfaced in the response so callers can decide what to do with them. The scanner does not refuse to clip pages *about* prompt injection: security writeups, tutorials, and articles that quote injection examples are all legitimate.
 
 ### Chat-session LLM
 
