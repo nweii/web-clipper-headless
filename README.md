@@ -13,9 +13,9 @@ For clipping work that happens outside a browser: webhook workflows, MCP tools, 
 - Picks the right template the same way the browser extension does (URL prefix, regex, or `schema:@Type` triggers), or by explicit name.
 - Reuses your existing `web-clipper-settings.json` so templates, providers, and prompts stay in one place.
 - Three call shapes for how interpreter slots get filled: deterministic, server-side LLM, or chat-driven (the calling agent fills slots itself).
-- Multi-provider interpreter dispatch: Anthropic native, OpenAI-compatible endpoints (OpenAI, Gemini, OpenRouter, DeepSeek, Groq, Mistral, Perplexity, Grok, Ollama, custom), and Cohere. Credentials resolve from env vars or your settings JSON.
+- Works with the major LLM providers: Anthropic, any OpenAI-compatible endpoint (OpenAI, Gemini, OpenRouter, DeepSeek, Groq, Mistral, Perplexity, Grok, Ollama, custom), and Cohere. API keys come from your settings JSON or env vars.
 - `variableOverrides` accepts caller-supplied content when defuddle can't see the page on its own (JS-rendered SPAs, authenticated sources, JS shells like X). See [External fetchers](#external-fetchers).
-- Recognizes known JS-shell sources and refuses to render without overrides, via a typed `SourceNeedsOverridesError`.
+- Refuses to render known JS-shell sources (like X) until you provide the missing values, throwing a `SourceNeedsOverridesError` that lists what's needed so callers can catch and retry.
 - Filename sanitization keeps invisible and FS-illegal characters from reaching disk.
 - Slot filter chains (`wikilink`, `split`, and so on) apply to both LLM output and caller-supplied overrides, so an overridden value renders the same shape as an interpreted one.
 - CLI (`wch`) for ad-hoc clips from the terminal.
@@ -36,7 +36,7 @@ For pages that need a logged-in session (X threads, paywalled articles, logged-i
 
 ## Setup
 
-`obsidian-clipper` ships from GitHub rather than npm, so its headless API bundle is built once after install:
+`obsidian-clipper` ships from GitHub rather than npm, so we build its bundle once after install:
 
 ```bash
 bun install
@@ -68,12 +68,12 @@ if (result.status === "rendered") {
 }
 ```
 
-The polyfill call is required outside the browser. It sets `globalThis.window`, `globalThis.DOMParser`, and `globalThis.document` from `linkedom` so defuddle's bundled Turndown initializes correctly. Safe to call multiple times.
+`installPolyfills()` is required outside the browser. It gives defuddle the DOM globals it needs (`window`, `DOMParser`, `document`) so HTML parsing works in Node and Bun. Safe to call multiple times.
 
 ## Quick start: CLI
 
 ```bash
-# Auto-match by trigger (no -t flag) — picks the right template based on URL/schema
+# Auto-match by trigger (no -t flag); picks the right template based on URL or schema
 bunx wch https://news.example.com/article -s ~/clipper-settings.json --interpret
 
 # Explicit template (always overrides auto-match)
@@ -132,10 +132,10 @@ For sources the library knows it can't read (currently the X / Twitter JS shell)
 
 ## Provider configuration
 
-The library reads providers from your clipper settings JSON's `interpreter_settings.providers[]`. Credential resolution chain:
+The library reads providers from your clipper settings JSON's `interpreter_settings.providers[]`. How it finds your API key:
 
 1. **Env var** (matched by provider name, see table below) — wins if set
-2. **`apiKey` from clipper JSON** — used if env var is unset and `credentialSource !== 'env'`
+2. **`apiKey` from clipper JSON** — used if no env var matches
 3. **Error** — actionable, lists which env vars were checked
 
 ### Provider name → env var mapping
@@ -164,24 +164,24 @@ Unknown provider names fall back to `${UPPER_SNAKE(name)}_API_KEY`. Useful for c
 
 ### Server-side LLM (headless, webhook)
 
-Each interpreter call runs without tools, vault access, or memory of the outer task. The system prompt declares page content untrusted and wraps it in `<page>...</page>` tags. Output is length-capped before substitution. Path, filename, and property names always come from the template, never from page content or LLM output.
+Each interpreter call runs without tools, vault access, or memory of the outer task. The system prompt declares page content untrusted and wraps it in `<page>...</page>` tags. LLM output is capped at a character limit before it goes into the template. Path, filename, and property names always come from the template, never from page content or LLM output.
 
-Page content is char-capped (default 64k chars input, ~16k tokens) before sending to the LLM. LLM output is char-capped per slot (1000 for text, 500 for multitext). Both configurable via `InterpreterOptions`.
+Page content is trimmed to 64k characters (~16k tokens) before going to the LLM. LLM output is trimmed per slot: 1000 chars for text slots, 500 for multitext. Both limits configurable via `InterpreterOptions`.
 
 ### Pattern detection (soft signal)
 
-Before LLM dispatch, a small regex pass scans the page content for common prompt-injection markers (role overrides, boundary tokens, instruction-override phrases, persona-shift attempts). Matches are recorded and surfaced in the response.
+Before sending page content to the LLM, a small regex pass scans it for common prompt-injection markers (role overrides, boundary tokens, instruction-override phrases, persona-shift attempts). Matches are recorded and surfaced in the response.
 
 Pattern detection is informational only. The no-tools isolation above is the actual security boundary; matches are surfaced in the response so callers can decide what to do with them. The scanner does not refuse to clip pages *about* prompt injection: security writeups, tutorials, and articles that quote injection examples are all legitimate.
 
 ### Chat-session LLM
 
-In the third call shape, the caller's LLM (Claude in chat) sees page content directly and fills interpreter slots itself. The caller is presumed to be a human-in-the-loop session, not an unsupervised agent. The `pageContent` field is structured with explicit `trusted: false` and `source: "external_url"` markers; `suspiciousPhrasesDetected` lists any pattern matches.
+In the third call shape, the caller's LLM (Claude in chat) sees page content directly and fills interpreter slots itself. The caller is presumed to be a human-in-the-loop session, not an unsupervised agent. The `pageContent` field includes `trusted: false` and `source: "external_url"` so the caller's LLM can see the content isn't trustworthy; `suspiciousPhrasesDetected` lists any pattern matches.
 
 ## Known limitations
 
 - **CSS-selector variables degrade silently** against JavaScript-rendered content. Selectors work fine on static HTML via linkedom, but cannot see content rendered after page load (lazy-loaded sections, SPA routes, content injected client-side). Failed selectors return empty strings.
-- **Polyfills required outside the browser.** `installPolyfills()` is the canonical setup; the library expects it to have been called.
+- **Polyfills required outside the browser.** Call `installPolyfills()` once at startup; the library expects it to have been called before `render()`.
 - **Auth-walled and JS-rendered pages need an external fetcher.** `defuddle` runs against public HTML, so X threads, paywalled articles, and most SPAs won't extract on their own. The library accepts a caller-supplied body via `variableOverrides`; see [External fetchers](#external-fetchers).
 - **Token caps may shorten LLM output** vs the official extension. Per-template configuration available via `InterpreterOptions`.
 - **Upstream bundle patching** — `bun run setup` patches `node_modules/obsidian-clipper/dist/api.mjs` to make defuddle linkedom-compatible and to expose `applyFilters`. The patcher exits with an error if upstream's bundle drifts so the patch can't apply.
@@ -195,7 +195,7 @@ src/
 ├── tokens.ts              {{"prompt"|filters}} slot finder + literal substitution
 ├── interpreter.ts         per-slot LLM dispatch with untrusted-content framing + caps + filter chain
 ├── settings.ts            JSON loader: full-settings vs single-template detection, folder mode
-├── credentials.ts         env → JSON → error resolution chain
+├── credentials.ts         API key lookup: env → settings JSON → error
 ├── provider-mapping.ts    clipper provider name → env var convention table
 ├── scan.ts                regex pattern detection (soft signal, not a boundary)
 ├── polyfills.ts           globalThis.window/DOMParser/document via linkedom
