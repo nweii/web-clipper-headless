@@ -49,7 +49,14 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
     };
   }
 
-  let resolvedSlots: Record<string, string> = { ...overrides };
+  const { clip, applyFilters } = await import("obsidian-clipper/api");
+
+  let resolvedSlots: Record<string, string> = applyOverrideFilters(
+    overrides,
+    slots,
+    options.url,
+    applyFilters
+  );
 
   if (unresolvedSlots.length > 0 && options.providerConfig) {
     resolvedSlots = await dispatchInterpreter({
@@ -60,12 +67,11 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
       overrides,
       providerConfig: options.providerConfig,
       variableOverrides,
+      applyFilters,
     });
   }
 
   const resolvedTemplate = substituteSlots(options.template, resolvedSlots);
-
-  const { clip } = await import("obsidian-clipper/api");
   const result = await clip({
     html,
     url: options.url,
@@ -92,9 +98,8 @@ async function dispatchInterpreter(args: {
   overrides: Record<string, string>;
   providerConfig: NonNullable<RenderOptions["providerConfig"]>;
   variableOverrides: Record<string, string>;
+  applyFilters: ApplyFiltersFn;
 }): Promise<Record<string, string>> {
-  const { applyFilters } = await import("obsidian-clipper/api");
-
   const pageContext = await buildPageContext(args.url, args.html, args.variableOverrides);
   const propertyTypes = new Map<string, "text" | "multitext">();
   for (const prop of args.template.properties) {
@@ -107,12 +112,39 @@ async function dispatchInterpreter(args: {
     slots: args.slots,
     pageContext,
     providerConfig: args.providerConfig,
-    applyFilters,
+    applyFilters: args.applyFilters,
     currentUrl: args.url,
     propertyTypes,
   });
 
-  return { ...args.overrides, ...interpreted };
+  const allSlots = findInterpreterSlots(args.template);
+  const filteredOverrides = applyOverrideFilters(
+    args.overrides,
+    allSlots,
+    args.url,
+    args.applyFilters
+  );
+  return { ...filteredOverrides, ...interpreted };
+}
+
+type ApplyFiltersFn = (value: string, filterString: string, currentUrl?: string) => string;
+
+// Runs each override value through its slot's filterChain so callers that
+// pre-resolve a slot get the same final shape as the interpreter path.
+// Override keys without a matching slot, and slots without a filterChain,
+// pass through unchanged.
+function applyOverrideFilters(
+  overrides: Record<string, string>,
+  slots: InterpreterSlot[],
+  url: string,
+  applyFilters: ApplyFiltersFn
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    const slot = slots.find((s) => s.key === key);
+    out[key] = slot?.filterChain ? applyFilters(value, slot.filterChain, url) : value;
+  }
+  return out;
 }
 
 async function defaultFetch(url: string): Promise<string> {
