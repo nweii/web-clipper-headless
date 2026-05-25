@@ -4,7 +4,7 @@ Use your [Obsidian Web Clipper](https://github.com/obsidianmd/obsidian-clipper) 
 
 Point it at a URL and your existing `web-clipper-settings.json`; it returns the rendered note as a markdown string.
 
-This is a personal tool I open-sourced in case it's useful to others. Treat it as a working project, not a maintained product.
+This is a personal tool I open-sourced in case it's useful to others.
 
 ## Features
 
@@ -94,13 +94,18 @@ bunx wch https://example.com/article -t "Full text" -s ~/clipper-settings.json -
 
 ## Three call patterns
 
-The same `render()` call behaves three ways depending on what you pass:
+A Web Clipper template has two kinds of tokens the library fills in:
+
+- **Variables** — `{{title}}`, `{{content}}`, `{{author}}`, and so on. Defuddle extracts these from the page HTML. You can override any of them via `variableOverrides` (see [External fetchers](#external-fetchers)).
+- **Interpreter slots** — `{{"some prompt"}}`, a prompt in double quotes. An LLM generates the value at render time. You can pre-fill any of them via `slotOverrides`, or let the library make the LLM call.
+
+The `render()` call behaves three ways depending on what the template uses and what you pass:
 
 | Shape | What you pass | What you get |
 |---|---|---|
-| **Deterministic** | template with no interpreter slots, OR all slots covered by `slotOverrides` | `{ status: "rendered", filename, fullContent, ... }` |
-| **Headless w/ LLM** | `providerConfig` set; library dispatches LLM calls server-side | `{ status: "rendered", ..., resolvedSlots }` |
-| **Chat-driven** | no `providerConfig`, no full overrides | `{ status: "needs_interpretation", unresolvedSlots, pageContent, preparedState }` — caller fills slots, calls again with `slotOverrides` |
+| **Deterministic** | A template with no interpreter slots, or `slotOverrides` covering every slot. No LLM call happens. | The rendered note (`status: "rendered"`). |
+| **Headless w/ LLM** | A template with interpreter slots, plus `providerConfig` (provider name, model, API key). The library makes the LLM call for you. | The rendered note, with slot values resolved by the LLM. `resolvedSlots` returns what the LLM produced. |
+| **Chat-driven** | A template with interpreter slots, no `providerConfig`. The library fetches the page, runs defuddle, and returns the unfilled slot prompts plus the extracted page content. | A `needs_interpretation` response with `unresolvedSlots`, `pageContent`, and `preparedState`. You fill the slots (in chat, by hand, however), then call `render()` again with `slotOverrides`. |
 
 The third shape is for environments where the calling agent is already an LLM (Claude in claude.ai, Claude Code) and should fill the interpreter slots itself rather than having the library make a separate API call.
 
