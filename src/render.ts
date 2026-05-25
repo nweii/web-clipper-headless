@@ -10,6 +10,7 @@ import { interpretSlots } from "./interpreter.ts";
 import { scanForInjection } from "./scan.ts";
 import { assertHeadlessCompatible } from "./headless-check.ts";
 import { sanitizeNoteName } from "./sanitize.ts";
+import { detectSentinel, SourceNeedsOverridesError } from "./sources.ts";
 import type {
   ClipperTemplate,
   InterpreterSlot,
@@ -27,9 +28,11 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
     ? await options.fetchHtml(options.url)
     : await defaultFetch(options.url);
 
+  const variableOverrides = options.variableOverrides ?? {};
+  assertSourceUsable(options.url, html, variableOverrides);
+
   const slots = findInterpreterSlots(options.template);
   const overrides = options.slotOverrides ?? {};
-  const variableOverrides = options.variableOverrides ?? {};
   const unresolvedSlots = slots.filter((s) => !(s.key in overrides));
 
   if (unresolvedSlots.length > 0 && !options.providerConfig) {
@@ -146,6 +149,36 @@ function applyOverrideFilters(
     out[key] = slot?.filterChain ? applyFilters(value, slot.filterChain, url) : value;
   }
   return out;
+}
+
+// Recognizes URLs whose <title> is a known JS-shell sentinel (e.g. X / Twitter's
+// "JavaScript is not available." page) and refuses to render unless the caller has
+// supplied the variableOverrides that would replace the unusable values. The check
+// runs once, before any branching, so all three downstream paths (peek, server-side
+// interpreter, fully-resolved render) get the same protection.
+function assertSourceUsable(
+  url: string,
+  html: string,
+  variableOverrides: Record<string, string>
+): void {
+  const { document } = parseHTML(html);
+  const rawTitle = document.querySelector("title")?.textContent ?? undefined;
+  const sentinel = detectSentinel(rawTitle);
+  if (!sentinel) return;
+
+  const missing = sentinel.requiredOverrides.filter(
+    (key) => !variableOverrides[key]
+  );
+  if (missing.length === 0) return;
+
+  throw new SourceNeedsOverridesError({
+    url,
+    sourceLabel: sentinel.sourceLabel,
+    detectedSentinel: (rawTitle ?? "").trim(),
+    requiredOverrides: sentinel.requiredOverrides,
+    missingOverrides: missing,
+    hint: sentinel.hint,
+  });
 }
 
 async function defaultFetch(url: string): Promise<string> {

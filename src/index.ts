@@ -20,6 +20,8 @@ export {
 } from "./credentials.ts";
 export { mapProviderName } from "./provider-mapping.ts";
 export { scanForInjection } from "./scan.ts";
+export { detectSentinel, SourceNeedsOverridesError } from "./sources.ts";
+export type { Sentinel, RequiredOverride } from "./sources.ts";
 export type {
   ClipperTemplate,
   ClipperSettings,

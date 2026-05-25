@@ -244,6 +244,66 @@ describe("render — variable overrides", () => {
   });
 });
 
+describe("render — sentinel source detection", () => {
+  // Minimal HTML mimicking the X / Twitter JS shell: real <title> is a JS-disabled
+  // notice; defuddle has nothing real to extract for body either.
+  const jsShellHtml = `<!doctype html><html><head><title>JavaScript is not available.</title></head><body><noscript>We've detected that JavaScript is disabled.</noscript></body></html>`;
+
+  test("throws SourceNeedsOverridesError when title matches a sentinel and no overrides are provided", async () => {
+    await expect(
+      render({
+        url: "https://x.com/user/status/1",
+        template: deterministicTemplate,
+        fetchHtml: async () => jsShellHtml,
+      })
+    ).rejects.toMatchObject({
+      name: "SourceNeedsOverridesError",
+      url: "https://x.com/user/status/1",
+      missingOverrides: ["title", "content"],
+    });
+  });
+
+  test("still throws when only one of the required overrides is provided", async () => {
+    await expect(
+      render({
+        url: "https://x.com/user/status/1",
+        template: deterministicTemplate,
+        fetchHtml: async () => jsShellHtml,
+        variableOverrides: { title: "Real Tweet Title" },
+      })
+    ).rejects.toMatchObject({
+      name: "SourceNeedsOverridesError",
+      missingOverrides: ["content"],
+    });
+  });
+
+  test("renders normally when both required overrides are present", async () => {
+    const result = await render({
+      url: "https://x.com/user/status/1",
+      template: deterministicTemplate,
+      fetchHtml: async () => jsShellHtml,
+      variableOverrides: {
+        title: "Real Tweet Title",
+        content: "Real tweet body fetched externally.",
+      },
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.frontmatter).toContain('title: "Real Tweet Title"');
+    expect(result.content).toContain("Real tweet body fetched externally.");
+  });
+
+  test("a normal page with a non-sentinel title is unaffected (regression guard)", async () => {
+    const html = await articleHtml();
+    const result = await render({
+      url: "https://example.com/article",
+      template: deterministicTemplate,
+      fetchHtml: async () => html,
+    });
+    expect(result.status).toBe("rendered");
+  });
+});
+
 describe("render — filename sanitization", () => {
   test("a literal U+200E in noteNameFormat does not reach the returned filename", async () => {
     const html = await articleHtml();
