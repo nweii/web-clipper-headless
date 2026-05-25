@@ -244,6 +244,29 @@ describe("render — variable overrides", () => {
   });
 });
 
+describe("render — filename sanitization", () => {
+  test("a literal U+200E in noteNameFormat does not reach the returned filename", async () => {
+    const html = await articleHtml();
+    const dirtyTemplate: ClipperTemplate = {
+      ...deterministicTemplate,
+      name: "Dirty",
+      // Leading U+200E (LRM) — matches the real-world failure where a stray bidi mark
+      // pasted into the template's noteNameFormat rode through to disk invisibly.
+      noteNameFormat: "‎{{title}}",
+    };
+    const result = await render({
+      url: "https://example.com/article",
+      template: dirtyTemplate,
+      fetchHtml: async () => html,
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.filename.charCodeAt(0)).not.toBe(0x200e);
+    expect(result.filename).not.toMatch(/[​-‏‪-‮⁠﻿]/);
+    expect(result.filename).toContain("Pragmatic Note Taker");
+  });
+});
+
 describe("render — filters applied to slot overrides", () => {
   const filteredTemplate: ClipperTemplate = {
     schemaVersion: "0.1.0",

@@ -9,6 +9,7 @@ import { findInterpreterSlots, substituteSlots } from "./tokens.ts";
 import { interpretSlots } from "./interpreter.ts";
 import { scanForInjection } from "./scan.ts";
 import { assertHeadlessCompatible } from "./headless-check.ts";
+import { sanitizeNoteName } from "./sanitize.ts";
 import type {
   ClipperTemplate,
   InterpreterSlot,
@@ -82,7 +83,7 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
 
   return {
     status: "rendered",
-    filename: result.noteName,
+    filename: sanitizeNoteName(result.noteName),
     frontmatter: result.frontmatter,
     content: result.content,
     fullContent: result.fullContent,
