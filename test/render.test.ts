@@ -244,6 +244,238 @@ describe("render — variable overrides", () => {
   });
 });
 
+describe("render — sentinel source detection", () => {
+  // Minimal HTML mimicking the X / Twitter JS shell: real <title> is a JS-disabled
+  // notice; defuddle has nothing real to extract for body either.
+  const jsShellHtml = `<!doctype html><html><head><title>JavaScript is not available.</title></head><body><noscript>We've detected that JavaScript is disabled.</noscript></body></html>`;
+
+  test("throws SourceNeedsOverridesError when title matches a sentinel and no overrides are provided", async () => {
+    await expect(
+      render({
+        url: "https://x.com/user/status/1",
+        template: deterministicTemplate,
+        fetchHtml: async () => jsShellHtml,
+      })
+    ).rejects.toMatchObject({
+      name: "SourceNeedsOverridesError",
+      url: "https://x.com/user/status/1",
+      missingOverrides: ["title", "content"],
+    });
+  });
+
+  test("still throws when only one of the required overrides is provided", async () => {
+    await expect(
+      render({
+        url: "https://x.com/user/status/1",
+        template: deterministicTemplate,
+        fetchHtml: async () => jsShellHtml,
+        variableOverrides: { title: "Real Tweet Title" },
+      })
+    ).rejects.toMatchObject({
+      name: "SourceNeedsOverridesError",
+      missingOverrides: ["content"],
+    });
+  });
+
+  test("renders normally when both required overrides are present", async () => {
+    const result = await render({
+      url: "https://x.com/user/status/1",
+      template: deterministicTemplate,
+      fetchHtml: async () => jsShellHtml,
+      variableOverrides: {
+        title: "Real Tweet Title",
+        content: "Real tweet body fetched externally.",
+      },
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.frontmatter).toContain('title: "Real Tweet Title"');
+    expect(result.content).toContain("Real tweet body fetched externally.");
+  });
+
+  test("a normal page with a non-sentinel title is unaffected (regression guard)", async () => {
+    const html = await articleHtml();
+    const result = await render({
+      url: "https://example.com/article",
+      template: deterministicTemplate,
+      fetchHtml: async () => html,
+    });
+    expect(result.status).toBe("rendered");
+  });
+});
+
+describe("render — filename sanitization", () => {
+  test("a literal U+200E in noteNameFormat does not reach the returned filename", async () => {
+    const html = await articleHtml();
+    const dirtyTemplate: ClipperTemplate = {
+      ...deterministicTemplate,
+      name: "Dirty",
+      // Leading U+200E (LRM) — matches the real-world failure where a stray bidi mark
+      // pasted into the template's noteNameFormat rode through to disk invisibly.
+      noteNameFormat: "‎{{title}}",
+    };
+    const result = await render({
+      url: "https://example.com/article",
+      template: dirtyTemplate,
+      fetchHtml: async () => html,
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.filename.charCodeAt(0)).not.toBe(0x200e);
+    expect(result.filename).not.toMatch(/[​-‏‪-‮⁠﻿]/);
+    expect(result.filename).toContain("Pragmatic Note Taker");
+  });
+});
+
+describe("render — filters applied to slot overrides", () => {
+  const filteredTemplate: ClipperTemplate = {
+    schemaVersion: "0.1.0",
+    name: "Filtered",
+    behavior: "create",
+    noteNameFormat: "{{title}}",
+    noteContentFormat: "{{content}}",
+    path: "Clippings",
+    properties: [
+      { name: "title", value: "{{title}}", type: "text" },
+      { name: "author", value: '{{"author full name"|wikilink}}', type: "text" },
+      {
+        name: "tags",
+        value: '{{"comma-separated lowercase tags"|split:","|wikilink}}',
+        type: "multitext",
+      },
+      { name: "description", value: '{{"one sentence summary"}}', type: "text" },
+    ],
+    triggers: [],
+  };
+
+  async function peekSlots(html: string) {
+    const peek = await render({
+      url: "https://example.com/article",
+      template: filteredTemplate,
+      fetchHtml: async () => html,
+    });
+    if (peek.status !== "needs_interpretation") {
+      throw new Error("expected needs_interpretation peek");
+    }
+    return peek.unresolvedSlots;
+  }
+
+  function slotFor(slots: Awaited<ReturnType<typeof peekSlots>>, propertyName: string) {
+    const found = slots.find(
+      (s) => s.location.kind === "property" && s.location.propertyName === propertyName
+    );
+    if (!found) throw new Error(`no slot for property ${propertyName}`);
+    return found;
+  }
+
+  test("wikilink override on a single-name slot is wrapped as [[Name]]", async () => {
+    const html = await articleHtml();
+    const slots = await peekSlots(html);
+    const overrides: Record<string, string> = {};
+    for (const s of slots) overrides[s.key] = "placeholder";
+    overrides[slotFor(slots, "author").key] = "Sam Example";
+
+    const result = await render({
+      url: "https://example.com/article",
+      template: filteredTemplate,
+      fetchHtml: async () => html,
+      slotOverrides: overrides,
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.frontmatter).toContain('author: "[[Sam Example]]"');
+  });
+
+  test("override on a no-filter slot passes through unchanged", async () => {
+    const html = await articleHtml();
+    const slots = await peekSlots(html);
+    const overrides: Record<string, string> = {};
+    for (const s of slots) overrides[s.key] = "placeholder";
+    overrides[slotFor(slots, "description").key] = "A plain description.";
+
+    const result = await render({
+      url: "https://example.com/article",
+      template: filteredTemplate,
+      fetchHtml: async () => html,
+      slotOverrides: overrides,
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.frontmatter).toContain('description: "A plain description."');
+  });
+
+  test("comma-separated wikilink override on a multitext slot becomes a YAML list", async () => {
+    const html = await articleHtml();
+    const slots = await peekSlots(html);
+    const overrides: Record<string, string> = {};
+    for (const s of slots) overrides[s.key] = "placeholder";
+    overrides[slotFor(slots, "tags").key] = "alpha,beta,gamma";
+
+    const result = await render({
+      url: "https://example.com/article",
+      template: filteredTemplate,
+      fetchHtml: async () => html,
+      slotOverrides: overrides,
+    });
+    expect(result.status).toBe("rendered");
+    if (result.status !== "rendered") return;
+    expect(result.frontmatter).toContain('"[[alpha]]"');
+    expect(result.frontmatter).toContain('"[[beta]]"');
+    expect(result.frontmatter).toContain('"[[gamma]]"');
+  });
+
+  test("server-side path filters both interpreted slots and overrides", async () => {
+    const html = await articleHtml();
+    const slots = await peekSlots(html);
+    const authorKey = slotFor(slots, "author").key;
+    const tagsKey = slotFor(slots, "tags").key;
+    const descKey = slotFor(slots, "description").key;
+
+    const interpretedResponse: Record<string, string> = {
+      [tagsKey]: "x, y, z",
+      [descKey]: "interpreted summary",
+    };
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ prompts_responses: interpretedResponse }),
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as unknown as typeof fetch;
+
+    try {
+      const provider: ProviderConfig = {
+        provider: "anthropic",
+        apiKey: "test",
+        baseUrl: "https://api.anthropic.com/v1/messages",
+        model: "claude-test",
+      };
+      const result = await render({
+        url: "https://example.com/article",
+        template: filteredTemplate,
+        providerConfig: provider,
+        fetchHtml: async () => html,
+        slotOverrides: { [authorKey]: "Override Author" },
+      });
+      expect(result.status).toBe("rendered");
+      if (result.status !== "rendered") return;
+      expect(result.frontmatter).toContain('author: "[[Override Author]]"');
+      expect(result.frontmatter).toContain('"[[x]]"');
+      expect(result.frontmatter).toContain('description: "interpreted summary"');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("renderFromSettings", () => {
   test("loads template by name and renders deterministically", async () => {
     const html = await articleHtml();
