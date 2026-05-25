@@ -2,9 +2,23 @@
 
 Use your [Obsidian Web Clipper](https://github.com/obsidianmd/obsidian-clipper) templates from outside the browser, anywhere JavaScript runs.
 
-Point it at a URL and your existing `web-clipper-settings.json`. It picks the right template the same way the browser extension does (matching the URL or schema against each template's `triggers`), runs the same defuddle extraction, dispatches interpreter prompts to the same LLM providers you already configured, and returns the rendered note.
+Point it at a URL and your existing `web-clipper-settings.json`; it returns the rendered note as a markdown string.
 
 This is a personal tool I open-sourced in case it's useful to others. Treat it as a working project, not a maintained product.
+
+## Features
+
+For clipping work that happens outside a browser: webhook workflows, MCP tools, cron jobs, and agents that clip into a vault on their own.
+
+- Picks the right template the same way the browser extension does (URL prefix, regex, or `schema:@Type` triggers), or by explicit name.
+- Reuses your existing `web-clipper-settings.json` so templates, providers, and prompts stay in one place.
+- Three call shapes for how interpreter slots get filled: deterministic, server-side LLM, or chat-driven (the calling agent fills slots itself).
+- Multi-provider interpreter dispatch: Anthropic native, OpenAI-compatible endpoints (OpenAI, Gemini, OpenRouter, DeepSeek, Groq, Mistral, Perplexity, Grok, Ollama, custom), and Cohere. Credentials resolve from env vars or your settings JSON.
+- `variableOverrides` accepts caller-supplied content when defuddle can't see the page on its own (JS-rendered SPAs, authenticated sources, JS shells like X). See [External fetchers](#external-fetchers).
+- Recognizes known JS-shell sources and refuses to render without overrides, via a typed `SourceNeedsOverridesError`.
+- Filename sanitization keeps invisible and FS-illegal characters from reaching disk.
+- Slot filter chains (`wikilink`, `split`, and so on) apply to both LLM output and caller-supplied overrides, so an overridden value renders the same shape as an interpreted one.
+- CLI (`wch`) for ad-hoc clips from the terminal.
 
 ## What you need
 
@@ -18,7 +32,7 @@ Your vault does not need to live on the same machine. This library returns the r
 
 Reach for this when clipping needs to happen server-side: webhook workflows, MCP tools, cron jobs, agents that clip into a vault on their own. Also for chat-driven cases where the LLM in the loop fills interpreter slots itself rather than the library making its own call.
 
-Stick with the official browser extension for anything behind a session: X threads, paywalled articles, logged-in dashboards. This package fetches public HTML; it has no cookies and no session.
+For pages that need a logged-in session (X threads, paywalled articles, logged-in dashboards), either keep the browser extension for those clips or pair this library with your own fetcher and pass the result through `variableOverrides`. The library has no cookies and no session of its own. See [External fetchers](#external-fetchers).
 
 ## Setup
 
@@ -90,6 +104,27 @@ The same `render()` call behaves three ways depending on what you pass:
 
 The third shape is for environments where the calling agent is already an LLM (Claude in claude.ai, Claude Code) and should fill the interpreter slots itself rather than having the library make a separate API call.
 
+## External fetchers
+
+For pages defuddle can't read on its own (JS-rendered SPAs, auth-walled sources, JS shells like X), fetch the body with your own mechanism and pass the result through `variableOverrides`:
+
+```ts
+const result = await renderFromSettings({
+  url: "https://x.com/user/status/1234",
+  settingsPath: "...",
+  templateName: "X thread",
+  variableOverrides: {
+    title:   "Real thread title",
+    content: "Real thread body, as markdown",
+    author:  "Real author handle",
+  },
+});
+```
+
+Overrides are flat, keyed by bare variable name (`title`, `content`, `author`, and so on). Defuddle still runs on the fetched HTML for everything *not* overridden, and template trigger matching is unaffected, so you can mix caller-supplied values with what defuddle finds for the same clip.
+
+For sources the library knows it can't read (currently the X / Twitter JS shell), `render()` throws `SourceNeedsOverridesError` listing which overrides are required. Catch the error and retry with the missing values. See `src/sources.ts` for the registry and how to extend it.
+
 ## Provider configuration
 
 The library reads providers from your clipper settings JSON's `interpreter_settings.providers[]`. Credential resolution chain:
@@ -124,7 +159,7 @@ Unknown provider names fall back to `${UPPER_SNAKE(name)}_API_KEY`. Useful for c
 
 ### Server-side LLM (headless, webhook)
 
-Each interpreter call runs in an isolated context: no tools, no memory of the outer task, no vault access. The system prompt declares page content untrusted and wraps it in `<page>...</page>` tags. Output is length-capped before substitution. Path, filename, and property names always come from the template, never from page content or LLM output.
+Each interpreter call runs without tools, vault access, or memory of the outer task. The system prompt declares page content untrusted and wraps it in `<page>...</page>` tags. Output is length-capped before substitution. Path, filename, and property names always come from the template, never from page content or LLM output.
 
 Page content is char-capped (default 64k chars input, ~16k tokens) before sending to the LLM. LLM output is char-capped per slot (1000 for text, 500 for multitext). Both configurable via `InterpreterOptions`.
 
@@ -142,7 +177,7 @@ In the third call shape, the caller's LLM (Claude in chat) sees page content dir
 
 - **CSS-selector variables degrade silently** against JavaScript-rendered content. Selectors work fine on static HTML via linkedom, but cannot see content rendered after page load (lazy-loaded sections, SPA routes, content injected client-side). Failed selectors return empty strings.
 - **Polyfills required outside the browser.** `installPolyfills()` is the canonical setup; the library expects it to have been called.
-- **Auth-walled pages won't work.** `defuddle` runs against the public HTML; X threads, paywalled articles, anything requiring a session will fail to extract. This is by design; use the official browser extension for those.
+- **Auth-walled and JS-rendered pages need an external fetcher.** `defuddle` runs against public HTML, so X threads, paywalled articles, and most SPAs won't extract on their own. The library accepts a caller-supplied body via `variableOverrides`; see [External fetchers](#external-fetchers).
 - **Token caps may shorten LLM output** vs the official extension. Per-template configuration available via `InterpreterOptions`.
 - **Upstream bundle patching** — `bun run setup` patches `node_modules/obsidian-clipper/dist/api.mjs` to make defuddle linkedom-compatible and to expose `applyFilters`. The patcher exits with an error if upstream's bundle drifts so the patch can't apply.
 
