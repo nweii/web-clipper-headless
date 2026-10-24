@@ -250,6 +250,62 @@ describe("interpretSlots — OpenAI-compatible adapter", () => {
     });
     expect(captured?.["Authorization"]).toBeUndefined();
   });
+
+  async function captureBody(config: ProviderConfig): Promise<Record<string, unknown>> {
+    let captured: Record<string, unknown> = {};
+    globalThis.fetch = (async (_url: string, init?: { body?: string }) => {
+      captured = JSON.parse(init?.body ?? "{}");
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"prompts_responses":{"slot_0":"x"}}' } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await interpretSlots({
+      slots: [slot("slot_0", "x")],
+      pageContext: PAGE,
+      providerConfig: config,
+      currentUrl: PAGE.url,
+      options: { maxResponseTokens: 1234 },
+    });
+    return captured;
+  }
+
+  test("OpenAI endpoints get max_completion_tokens and no temperature", async () => {
+    const body = await captureBody({
+      ...OAI_CONFIG,
+      baseUrl: "https://api.openai.com/v1/chat/completions",
+      model: "gpt-5-mini",
+    });
+    expect(body.max_completion_tokens).toBe(1234);
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+  });
+
+  test("Azure OpenAI endpoints get max_completion_tokens", async () => {
+    const body = await captureBody({
+      ...OAI_CONFIG,
+      baseUrl: "https://example.openai.azure.com/openai/deployments/d/chat/completions",
+    });
+    expect(body.max_completion_tokens).toBe(1234);
+    expect(body.max_tokens).toBeUndefined();
+  });
+
+  test("other compatible endpoints keep max_tokens and temperature", async () => {
+    const body = await captureBody(OAI_CONFIG);
+    expect(body.max_tokens).toBe(1234);
+    expect(body.temperature).toBe(0.2);
+    expect(body.max_completion_tokens).toBeUndefined();
+  });
+
+  test("names the token limit when the model runs out before answering", async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: "" }, finish_reason: "length" }] }), { status: 200 })) as unknown as typeof fetch;
+    await expect(
+      interpretSlots({
+        slots: [slot("slot_0", "x")],
+        pageContext: PAGE,
+        providerConfig: OAI_CONFIG,
+        currentUrl: PAGE.url,
+      })
+    ).rejects.toThrow(/maxResponseTokens/);
+  });
 });
 
 describe("parseInterpreterJson", () => {
