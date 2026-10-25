@@ -26,6 +26,19 @@ function inferEndpoint(baseUrl: string | undefined): string {
   return base;
 }
 
+// OpenAI's own endpoints replaced max_tokens with max_completion_tokens, and its reasoning
+// models reject both max_tokens and any non-default temperature. Other OpenAI-compatible
+// providers still expect max_tokens, and some reject fields they don't know.
+function isOpenAIHost(endpoint: string): boolean {
+  const host = new URL(endpoint).hostname;
+  return host === "api.openai.com" || host.endsWith(".openai.azure.com");
+}
+
+function samplingParams(endpoint: string, maxOutputTokens: number): Record<string, number> {
+  if (isOpenAIHost(endpoint)) return { max_completion_tokens: maxOutputTokens };
+  return { max_tokens: maxOutputTokens, temperature: 0.2 };
+}
+
 export async function callOpenAICompatible(
   config: ProviderConfig,
   req: ChatRequest
@@ -44,8 +57,7 @@ export async function callOpenAICompatible(
       { role: "system", content: req.systemPrompt },
       { role: "user", content: req.userMessage },
     ],
-    max_tokens: req.maxOutputTokens,
-    temperature: 0.2,
+    ...samplingParams(endpoint, req.maxOutputTokens),
   };
 
   const response = await fetch(endpoint, {
@@ -62,7 +74,7 @@ export async function callOpenAICompatible(
   }
 
   const json = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
     error?: { message?: string };
   };
 
@@ -70,7 +82,14 @@ export async function callOpenAICompatible(
     throw new Error(`Provider returned error: ${json.error.message ?? "unknown"}`);
   }
 
-  const content = json.choices?.[0]?.message?.content;
+  const choice = json.choices?.[0];
+  if (choice?.finish_reason === "length" && !choice.message?.content) {
+    throw new Error(
+      `Provider hit the ${req.maxOutputTokens}-token output limit before answering; reasoning models can spend it all thinking. Raise maxResponseTokens.`
+    );
+  }
+
+  const content = choice?.message?.content;
   if (typeof content !== "string") {
     throw new Error("Provider response missing choices[0].message.content");
   }
